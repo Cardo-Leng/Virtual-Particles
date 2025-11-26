@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 粒子系统 v4.2 (高灵敏度优化版)</title>
+    
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #050505; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; user-select: none; }
+        
+        #video-container {
+            position: absolute; bottom: 20px; left: 20px;
+            width: 160px; height: 120px;
+            border-radius: 12px; overflow: hidden;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            z-index: 10; transform: scaleX(-1); pointer-events: none;
+        }
+        video { width: 100%; height: 100%; object-fit: cover; }
+
+        #ui-container {
+            position: absolute; top: 20px; right: 20px;
+            background: rgba(20, 20, 20, 0.8); backdrop-filter: blur(12px);
+            padding: 24px; border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: white; z-index: 100; display: flex; flex-direction: column;
+            gap: 16px; width: 240px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+        }
+        h3 { margin: 0; font-size: 14px; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: 1px; }
+        .grid-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        button {
+            background: rgba(255, 255, 255, 0.08); border: none; color: white;
+            padding: 12px; border-radius: 10px; cursor: pointer;
+            transition: all 0.2s ease; font-size: 14px; font-weight: 500;
+        }
+        button:hover { background: rgba(255, 255, 255, 0.15); }
+        button.active { background: #00d2ff; color: #000; font-weight: 700; box-shadow: 0 0 15px rgba(0, 210, 255, 0.4); }
+
+        .switch-container { display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 12px; }
+        .switch-label { font-size: 14px; font-weight: 600; }
+        .toggle-switch { position: relative; display: inline-block; width: 50px; height: 28px; }
+        .toggle-switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #444; transition: .4s; border-radius: 34px; }
+        .slider:before { position: absolute; content: ""; height: 22px; width: 22px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: #30d158; }
+        input:checked + .slider:before { transform: translateX(22px); }
+
+        .color-wrapper { display: flex; align-items: center; justify-content: space-between; }
+        input[type="color"] { -webkit-appearance: none; appearance: none; border: none; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; background: none; padding: 0; }
+        input[type="color"]::-webkit-color-swatch { border: 2px solid rgba(255,255,255,0.8); border-radius: 50%; }
+        #status { font-size: 12px; color: #00d2ff; text-align: center; margin-top: 5px; min-height: 16px; }
+        #loader { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #00d2ff; font-size: 18px; z-index: 200; pointer-events: none; transition: opacity 0.5s; text-align: center; }
+    </style>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+</head>
+<body>
+
+    <div id="loader">系统初始化中...<br><span style="font-size:12px; color:#aaa">请允许摄像头权限</span></div>
+
+    <div id="ui-container">
+        <h3>系统设置</h3>
+        <div class="switch-container">
+            <span class="switch-label">自动旋转 (静态)</span>
+            <label class="toggle-switch">
+                <input type="checkbox" id="rotationToggle" checked>
+                <span class="slider"></span>
+            </label>
+        </div>
+
+        <h3>模型选择</h3>
+        <div class="grid-buttons">
+            <button onclick="setShape('hand')" class="active" id="btn-hand" style="grid-column: span 2; background: rgba(255, 255, 255, 0.15); font-weight:bold;">🖐 动态双手追踪</button>
+            <button onclick="setShape('heart')" id="btn-heart">爱心</button>
+            <button onclick="setShape('planet')" id="btn-planet">地球</button>
+            <button onclick="setShape('saturn')" id="btn-saturn">土星</button>
+            <button onclick="setShape('flower')" id="btn-flower">花朵</button>
+        </div>
+
+        <div class="color-wrapper">
+            <h3>粒子颜色</h3>
+            <input type="color" id="colorPicker" value="#00d2ff">
+        </div>
+
+        <div id="status">等待手势识别...</div>
+    </div>
+
+    <div id="video-container">
+        <video id="input_video"></video>
+    </div>
+
+    <script>
+        // ================= 全局配置与变量 =================
+        const MAX_HANDS = 2; 
+        const TOTAL_PARTICLES = 40000; 
+        const PARTICLES_PER_HAND = Math.floor(TOTAL_PARTICLES / MAX_HANDS); 
+        
+        const HAND_SCALE_BASE = 180; 
+        const ARM_LENGTH = 400;
+        
+        let scene, camera, renderer, particles, geometry, material;
+        let targetPositions = new Float32Array(TOTAL_PARTICLES * 3);
+        let currentPositions = new Float32Array(TOTAL_PARTICLES * 3);
+        let handScales = new Float32Array(MAX_HANDS).fill(0); 
+        
+        let currentShape = 'hand'; 
+        let multiHandLandmarks = []; 
+        let targetColor = new THREE.Color(0x00d2ff);
+        let isAutoRotation = true;
+        
+        let handOpenFactor = 0; 
+        let mainHandRotation = { x:0, y:0, z:0 };
+
+        const HAND_CONNECTIONS = [
+            [0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],
+            [0,9],[9,10],[10,11],[11,12],[0,13],[13,14],[14,15],[15,16],
+            [0,17],[17,18],[18,19],[19,20],[5,9],[9,13],[13,17]
+        ];
+
+        function initThree() {
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x050505, 0.002);
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 3000);
+            camera.position.z = 500;
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            document.body.appendChild(renderer.domElement);
+
+            geometry = new THREE.BufferGeometry();
+            for (let i = 0; i < TOTAL_PARTICLES * 3; i++) {
+                currentPositions[i] = (Math.random() - 0.5) * 500;
+            }
+            geometry.setAttribute('position', new THREE.BufferAttribute(currentPositions, 3));
+
+            const sprite = new THREE.TextureLoader().load('https://threejs.org/examples/textures/sprites/disc.png');
+            material = new THREE.PointsMaterial({
+                size: 4,
+                color: targetColor,
+                map: sprite,
+                sizeAttenuation: true,
+                alphaTest: 0.5,
+                transparent: true,
+                opacity: 0.7,
+                blending: THREE.AdditiveBlending
+            });
+
+            particles = new THREE.Points(geometry, material);
+            scene.add(particles);
+
+            setShape('hand');
+            window.addEventListener('resize', onWindowResize, false);
+            animate();
+        }
+
+        // ================= 静态形状计算 (已调整大小) =================
+        function calculateStaticShape(type) {
+            const RENDER_SIZE = 180;
+            const positions = [];
+            for (let i = 0; i < TOTAL_PARTICLES; i++) {
+                let x=0, y=0, z=0;
+                if(type === 'heart') {
+                     // 【修改 1】增加爱心的倍数，从 8 改为 13，让它变得更大、更饱满
+                     let t = Math.random() * Math.PI * 2;
+                     x = 16 * Math.pow(Math.sin(t), 3);
+                     y = 13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t);
+                     x *= 13; // 增大倍数
+                     y *= 13; // 增大倍数
+                     z = (Math.random() - 0.5) * 80; // 增加厚度
+                     // 内部填充
+                     if (Math.random() < 0.5) {
+                        const s = Math.random();
+                        x *= s; y *= s; z *= s;
+                     }
+                     x += (Math.random()-0.5)*15; y += (Math.random()-0.5)*15;
+                } else if(type !== 'hand') {
+                     // 基础球体
+                     const r = RENDER_SIZE * Math.cbrt(Math.random());
+                     const theta = Math.random() * Math.PI * 2;
+                     const phi = Math.acos(2 * Math.random() - 1);
+                     x = r * Math.sin(phi) * Math.cos(theta);
+                     y = r * Math.sin(phi) * Math.sin(theta);
+                     z = r * Math.cos(phi);
+                     
+                     if (type === 'saturn') {
+                         // 土星环保持较大
+                         if (Math.random() > 0.6) {
+                            const rRing = (RENDER_SIZE*1.2) + Math.random()*80;
+                            const tRing = Math.random()*Math.PI*2;
+                            x = rRing * Math.cos(tRing); z = rRing * Math.sin(tRing); y = (Math.random()-0.5)*5;
+                         }
+                     } else if (type === 'flower') {
+                         // 【修改 2】增加花朵的扩散范围
+                         const rBase = RENDER_SIZE * Math.sqrt(Math.random());
+                         const fTheta = Math.random() * Math.PI * 2;
+                         const k = 5;
+                         // 增加系数，使花瓣更舒展
+                         const fR = rBase * Math.cos(k * fTheta) + RENDER_SIZE * 0.4; 
+                         x = fR * Math.cos(fTheta); y = fR * Math.sin(fTheta); 
+                         z = (Math.random() - 0.5) * 80 * Math.cos(k*fTheta);
+                     }
+                }
+                targetPositions[i * 3] = x; 
+                targetPositions[i * 3 + 1] = y; 
+                targetPositions[i * 3 + 2] = z;
+            }
+        }
+
+        function setShape(shape) {
+            currentShape = shape;
+            document.querySelectorAll('.grid-buttons button').forEach(b => b.classList.remove('active'));
+            document.getElementById(`btn-${shape}`).classList.add('active');
+            
+            if (shape !== 'hand') {
+                calculateStaticShape(shape); 
+                document.getElementById('rotationToggle').disabled = false;
+                particles.rotation.set(0,0,0);
+            } else {
+                document.getElementById('rotationToggle').disabled = true;
+                particles.rotation.set(0,0,0);
+            }
+        }
+
+        function updateSingleHandParticles(landmarks, handIndex) {
+            const startIndex = handIndex * PARTICLES_PER_HAND;
+            const endIndex = startIndex + PARTICLES_PER_HAND;
+            const handParticleCount = Math.floor(PARTICLES_PER_HAND * 0.7);
+            const handEndIndex = startIndex + handParticleCount;
+
+            let pIndex = startIndex;
+            const particlesPerBone = Math.floor(handParticleCount / HAND_CONNECTIONS.length);
+
+            HAND_CONNECTIONS.forEach(pair => {
+                const start = landmarks[pair[0]];
+                const end = landmarks[pair[1]];
+                for (let i = 0; i < particlesPerBone; i++) {
+                    if (pIndex >= handEndIndex) break;
+                    const t = Math.random();
+                    let tx = (0.5 - (start.x + (end.x - start.x) * t)) * HAND_SCALE_BASE * 2.5;
+                    let ty = (0.5 - (start.y + (end.y - start.y) * t)) * HAND_SCALE_BASE * 2.5;
+                    let tz = -(start.z + (end.z - start.z) * t) * HAND_SCALE_BASE * 2.0;
+                    const spread = 8 * (1.0 - t * 0.5);
+                    tx += (Math.random() - 0.5) * spread; ty += (Math.random() - 0.5) * spread; tz += (Math.random() - 0.5) * spread;
+                    targetPositions[pIndex * 3] = tx; targetPositions[pIndex * 3 + 1] = ty; targetPositions[pIndex * 3 + 2] = tz;
+                    pIndex++;
+                }
+            });
+
+            const wrist = landmarks[0];
+            const middleMCP = landmarks[9];
+            let dx = wrist.x - middleMCP.x; let dy = wrist.y - middleMCP.y; let dz = wrist.z - middleMCP.z;
+            const len = Math.sqrt(dx*dx + dy*dy + dz*dz); dx /= len; dy /= len; dz /= len;
+            const wristX = (0.5 - wrist.x) * HAND_SCALE_BASE * 2.5;
+            const wristY = (0.5 - wrist.y) * HAND_SCALE_BASE * 2.5;
+            const wristZ = -wrist.z * HAND_SCALE_BASE * 2.0;
+
+            for (let i = handEndIndex; i < endIndex; i++) {
+                const t = Math.random();
+                const dist = t * ARM_LENGTH;
+                let tx = wristX + (-dx) * dist; let ty = wristY + (-dy) * dist; let tz = wristZ + (-dz) * dist;
+                const armSpread = 15 + Math.pow(t, 2) * 100;
+                tx += (Math.random() - 0.5) * armSpread; ty += (Math.random() - 0.5) * armSpread; tz += (Math.random() - 0.5) * armSpread;
+                targetPositions[i * 3] = tx; targetPositions[i * 3 + 1] = ty; targetPositions[i * 3 + 2] = tz;
+            }
+        }
+
+        // ================= 动画循环 (高灵敏度优化) =================
+        function animate() {
+            requestAnimationFrame(animate);
+            material.color.lerp(targetColor, 0.05);
+
+            if (currentShape === 'hand') {
+                for (let i = 0; i < MAX_HANDS; i++) {
+                    if (i < multiHandLandmarks.length) {
+                        const landmarks = multiHandLandmarks[i];
+                        updateSingleHandParticles(landmarks, i);
+                        const wristZ = landmarks[0].z;
+                        let s = (wristZ + 0.2) * 3.0;
+                        handScales[i] = THREE.MathUtils.clamp(s, 0.4, 2.5);
+                    } else {
+                        handScales[i] = THREE.MathUtils.lerp(handScales[i], 0, 0.1); 
+                    }
+                }
+                particles.rotation.set(0,0,0);
+            } 
+            else {
+                let hasHand = multiHandLandmarks.length > 0;
+                if (isAutoRotation) {
+                    particles.rotation.y += 0.002;
+                    particles.rotation.x = THREE.MathUtils.lerp(particles.rotation.x, 0, 0.05);
+                    particles.rotation.z = THREE.MathUtils.lerp(particles.rotation.z, 0, 0.05);
+                } else if (hasHand) {
+                    particles.rotation.x = THREE.MathUtils.lerp(particles.rotation.x, mainHandRotation.x, 0.1);
+                    particles.rotation.y = THREE.MathUtils.lerp(particles.rotation.y, mainHandRotation.y, 0.1);
+                    particles.rotation.z = THREE.MathUtils.lerp(particles.rotation.z, mainHandRotation.z, 0.1);
+                }
+            }
+
+            const positions = geometry.attributes.position.array;
+            
+            for (let i = 0; i < TOTAL_PARTICLES; i++) {
+                const handIndex = Math.floor(i / PARTICLES_PER_HAND);
+                let effectiveScale = 1.0;
+                
+                if (currentShape === 'hand') {
+                    effectiveScale = handScales[handIndex];
+                } else {
+                    // 【修改 3】 高灵敏度缩放公式
+                    // 原来是: 0.5 + factor * 1.5 (最大 2.0)
+                    // 现在改为: 0.6 + factor * 2.2 (最大 2.8)
+                    // 这会让手张开时，物体变得比以前大很多
+                    if (multiHandLandmarks.length > 0) {
+                        effectiveScale = 0.6 + (handOpenFactor * 2.2);
+                    } else {
+                        const time = Date.now() * 0.001;
+                        effectiveScale = 0.7 + Math.sin(time) * 0.2;
+                    }
+                }
+
+                const px = positions[i*3], py = positions[i*3+1], pz = positions[i*3+2];
+                const tx = targetPositions[i*3], ty = targetPositions[i*3+1], tz = targetPositions[i*3+2];
+                const speed = currentShape === 'hand' ? 0.2 : 0.06;
+
+                positions[i*3]   += (tx * effectiveScale - px) * speed;
+                positions[i*3+1] += (ty * effectiveScale - py) * speed;
+                positions[i*3+2] += (tz * effectiveScale - pz) * speed;
+            }
+
+            geometry.attributes.position.needsUpdate = true;
+            renderer.render(scene, camera);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        const statusElement = document.getElementById('status');
+
+        function onResults(results) {
+            document.getElementById('loader').style.opacity = 0;
+            multiHandLandmarks = results.multiHandLandmarks || [];
+
+            if (multiHandLandmarks.length > 0) {
+                const primaryHand = multiHandLandmarks[0];
+                
+                const palm = primaryHand[0];
+                const fingertips = [4, 8, 12, 16, 20];
+                let totalDist = 0;
+                fingertips.forEach(idx => {
+                    const tip = primaryHand[idx];
+                    totalDist += Math.sqrt(Math.pow(tip.x - palm.x, 2) + Math.pow(tip.y - palm.y, 2));
+                });
+                
+                // 计算 Open Factor
+                let rawFactor = (totalDist / 5 - 0.1) * 3.5;
+                handOpenFactor = Math.max(0, Math.min(1, rawFactor));
+
+                if (!isAutoRotation) {
+                    const wrist = primaryHand[0];
+                    const mid = primaryHand[9];
+                    const dx = mid.x - wrist.x;
+                    const dy = mid.y - wrist.y;
+                    mainHandRotation.z = (Math.atan2(dy, dx) + Math.PI / 2);
+                    mainHandRotation.x = (primaryHand[12].z - wrist.z) * 3.0;
+                    mainHandRotation.y = (primaryHand[17].z - primaryHand[5].z) * 3.0;
+                }
+            } else {
+                handOpenFactor = 0;
+            }
+
+            if (multiHandLandmarks.length > 0) {
+                const count = multiHandLandmarks.length;
+                if (currentShape === 'hand') {
+                    statusElement.innerText = `追踪中: ${count} 只手 | 独立缩放`;
+                    statusElement.style.color = "#30d158";
+                } else {
+                    if(!isAutoRotation) {
+                        statusElement.innerText = `静态模式 | 高灵敏缩放 | 旋转(主手)`;
+                    } else {
+                        statusElement.innerText = `静态模式 | 高灵敏缩放 | 自动旋转`;
+                    }
+                    statusElement.style.color = "#00d2ff";
+                }
+            } else {
+                statusElement.innerText = "未检测到手势 | 自动演示模式";
+                statusElement.style.color = "#aaa";
+            }
+        }
+
+        const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+        hands.setOptions({
+            maxNumHands: MAX_HANDS, 
+            modelComplexity: 1,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+        hands.onResults(onResults);
+        
+        const cameraUtils = new Camera(document.getElementById('input_video'), {
+            onFrame: async () => { await hands.send({image: document.getElementById('input_video')}); },
+            width: 320, height: 240
+        });
+        cameraUtils.start();
+        
+        document.getElementById('rotationToggle').addEventListener('change', (e)=>{isAutoRotation=e.target.checked;});
+        document.getElementById('colorPicker').addEventListener('input', (e)=>{targetColor.set(e.target.value);});
+
+        initThree();
+    </script>
+</body>
+</html>
