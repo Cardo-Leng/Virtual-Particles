@@ -3,48 +3,73 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>AI 粒子交互系统 v4.3</title>
+    <title>AI 粒子交互系统 v4.4 (双端适配版)</title>
     
     <style>
-        /* 全局样式：禁止长按选中，防止手机误触 */
+        /* 全局样式 */
         body { margin: 0; overflow: hidden; background-color: #050505; font-family: 'Segoe UI', Helvetica, sans-serif; user-select: none; -webkit-user-select: none; touch-action: none; }
         
-        /* 视频反馈窗口 (手机上缩小并半透明，避免遮挡) */
+        /* ================= 响应式布局核心 ================= */
+        
+        /* 1. 默认样式 (以电脑端体验为主) */
         #video-container {
-            position: absolute; bottom: 15px; left: 15px;
-            width: 100px; height: 133px; /* 3:4 比例 */
-            border-radius: 10px; overflow: hidden;
-            border: 2px solid rgba(255, 255, 255, 0.15);
+            position: absolute; bottom: 20px; left: 20px;
+            /* 电脑端：大尺寸，横屏 4:3 */
+            width: 320px; height: 240px; 
+            border-radius: 12px; overflow: hidden;
+            border: 2px solid rgba(255, 255, 255, 0.2);
             z-index: 10; transform: scaleX(-1); pointer-events: none;
-            opacity: 0.8;
+            opacity: 0.9;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
         }
-        video { width: 100%; height: 100%; object-fit: cover; }
-
-        /* UI 控制面板 (适配窄屏手机) */
+        
         #ui-container {
-            position: absolute; top: 10px; right: 10px;
-            background: rgba(20, 20, 20, 0.65); backdrop-filter: blur(10px);
-            padding: 15px; border-radius: 16px;
+            position: absolute; top: 20px; right: 20px;
+            background: rgba(20, 20, 20, 0.75); backdrop-filter: blur(12px);
+            padding: 20px; border-radius: 16px;
             border: 1px solid rgba(255, 255, 255, 0.1);
             color: white; z-index: 100; display: flex; flex-direction: column;
-            gap: 12px; width: 160px;
+            gap: 15px; width: 220px;
             box-shadow: 0 8px 32px rgba(0,0,0,0.4);
         }
 
-        h3 { margin: 0; font-size: 11px; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
+        /* 2. 手机端适配 (屏幕宽度小于 768px 时生效) */
+        @media (max-width: 768px) {
+            #video-container {
+                bottom: 15px; left: 15px;
+                /* 手机端：小尺寸，竖屏 3:4 */
+                width: 100px; height: 133px; 
+                opacity: 0.8;
+                border: 2px solid rgba(255, 255, 255, 0.15);
+            }
 
-        /* 按钮网格 */
-        .grid-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+            #ui-container {
+                top: 10px; right: 10px;
+                padding: 15px; width: 150px; /* 变窄 */
+                gap: 10px;
+            }
+            
+            /* 调整手机上的字体大小 */
+            h3 { font-size: 11px; }
+            button { padding: 8px; font-size: 11px; }
+            .switch-container, .color-wrapper { font-size: 11px; }
+        }
+
+        /* ================= 通用样式 ================= */
+        video { width: 100%; height: 100%; object-fit: cover; }
+
+        h3 { margin: 0; font-size: 12px; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
+
+        .grid-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
         button {
             background: rgba(255, 255, 255, 0.1); border: none; color: white;
-            padding: 8px; border-radius: 6px; font-size: 11px; cursor: pointer;
+            padding: 10px; border-radius: 8px; font-size: 12px; cursor: pointer;
             transition: background 0.2s;
         }
         button:hover { background: rgba(255, 255, 255, 0.2); }
         button.active { background: #00d2ff; color: #000; font-weight: 700; box-shadow: 0 0 10px rgba(0, 210, 255, 0.3); }
 
-        /* 开关样式 */
-        .switch-container { display: flex; justify-content: space-between; align-items: center; font-size: 11px; }
+        .switch-container { display: flex; justify-content: space-between; align-items: center; font-size: 12px; }
         .toggle-switch { position: relative; display: inline-block; width: 36px; height: 20px; }
         .toggle-switch input { opacity: 0; width: 0; height: 0; }
         .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #444; transition: .4s; border-radius: 20px; }
@@ -52,15 +77,12 @@
         input:checked + .slider { background-color: #30d158; }
         input:checked + .slider:before { transform: translateX(16px); }
 
-        /* 颜色选择器 */
-        .color-wrapper { display: flex; align-items: center; justify-content: space-between; font-size: 11px; }
+        .color-wrapper { display: flex; align-items: center; justify-content: space-between; font-size: 12px; }
         input[type="color"] { -webkit-appearance: none; appearance: none; border: none; width: 24px; height: 24px; border-radius: 50%; background: none; padding: 0; }
         input[type="color"]::-webkit-color-swatch { border: 2px solid white; border-radius: 50%; }
 
-        /* 状态文字 */
         #status { font-size: 10px; color: #00d2ff; text-align: center; margin-top: 5px; white-space: nowrap; }
 
-        /* 加载提示 */
         #loader {
             position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
             color: #00d2ff; font-size: 14px; z-index: 200; pointer-events: none;
@@ -113,29 +135,28 @@
 
     <script>
         // ================= 配置与常量 =================
-        const MAX_HANDS = 2; // 支持双手
-        // 为了手机性能平衡，粒子数设为 25000 (如果手机很新，可尝试改回 35000)
-        const TOTAL_PARTICLES = 25000; 
-        const PARTICLES_PER_HAND = Math.floor(TOTAL_PARTICLES / MAX_HANDS); 
+        const MAX_HANDS = 2; 
         
-        const HAND_SCALE_BASE = 180; // 手掌基础大小
-        const ARM_LENGTH = 400;      // 手臂长度
+        // 动态检测：如果是电脑，粒子多一点(40000)；如果是手机，粒子少一点(25000)
+        const isMobile = window.innerWidth < 768;
+        const TOTAL_PARTICLES = isMobile ? 25000 : 40000; 
+        
+        const PARTICLES_PER_HAND = Math.floor(TOTAL_PARTICLES / MAX_HANDS); 
+        const HAND_SCALE_BASE = 180; 
+        const ARM_LENGTH = 400;      
         
         let scene, camera, renderer, particles, geometry, material;
         let targetPositions = new Float32Array(TOTAL_PARTICLES * 3);
         let currentPositions = new Float32Array(TOTAL_PARTICLES * 3);
         
-        // 状态变量
-        let handScales = new Float32Array(MAX_HANDS).fill(0); // 每只手的独立缩放
+        let handScales = new Float32Array(MAX_HANDS).fill(0); 
         let currentShape = 'hand'; 
         let multiHandLandmarks = []; 
         let targetColor = new THREE.Color(0x00d2ff);
         let isAutoRotation = true;
-        
-        let handOpenFactor = 0; // 静态模型缩放因子
-        let mainHandRotation = { x:0, y:0, z:0 }; // 静态模型旋转角度
+        let handOpenFactor = 0; 
+        let mainHandRotation = { x:0, y:0, z:0 }; 
 
-        // 骨骼连接定义
         const HAND_CONNECTIONS = [
             [0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],
             [0,9],[9,10],[10,11],[11,12],[0,13],[13,14],[14,15],[15,16],
@@ -148,11 +169,10 @@
             scene.fog = new THREE.FogExp2(0x050505, 0.002);
 
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 3000);
-            camera.position.z = 500; // 适配手机竖屏，拉远一点
+            camera.position.z = 500; 
 
             renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
-            // 限制像素比，防止高分屏手机过热
             renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); 
             document.body.appendChild(renderer.domElement);
 
@@ -164,7 +184,7 @@
 
             const sprite = new THREE.TextureLoader().load('https://threejs.org/examples/textures/sprites/disc.png');
             material = new THREE.PointsMaterial({
-                size: 4, // 粒子大小
+                size: 4, 
                 color: targetColor,
                 map: sprite,
                 sizeAttenuation: true,
@@ -177,12 +197,12 @@
             particles = new THREE.Points(geometry, material);
             scene.add(particles);
 
-            setShape('hand'); // 默认启动手掌模式
+            setShape('hand'); 
             window.addEventListener('resize', onWindowResize, false);
             animate();
         }
 
-        // ================= 静态形状计算 (高灵敏度版) =================
+        // ================= 静态形状计算 =================
         function calculateStaticShape(type) {
             const RENDER_SIZE = 180;
             const positions = [];
@@ -192,14 +212,10 @@
                      let t = Math.random() * Math.PI * 2;
                      x = 16 * Math.pow(Math.sin(t), 3);
                      y = 13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t);
-                     x *= 13; // 放大倍数
-                     y *= 13; 
-                     z = (Math.random() - 0.5) * 80;
-                     // 内部填充
+                     x *= 13; y *= 13; z = (Math.random() - 0.5) * 80;
                      if (Math.random() < 0.5) { const s = Math.random(); x*=s; y*=s; z*=s; }
                      x += (Math.random()-0.5)*15; y += (Math.random()-0.5)*15;
                 } else if(type !== 'hand') {
-                     // 基础球体生成
                      const r = RENDER_SIZE * Math.cbrt(Math.random());
                      const theta = Math.random() * Math.PI * 2;
                      const phi = Math.acos(2 * Math.random() - 1);
@@ -243,18 +259,16 @@
             }
         }
 
-        // ================= 单只手掌粒子生成 =================
+        // ================= 动态手掌生成 =================
         function updateSingleHandParticles(landmarks, handIndex) {
             const startIndex = handIndex * PARTICLES_PER_HAND;
             const endIndex = startIndex + PARTICLES_PER_HAND;
-            // 70% 粒子用于手掌，30% 用于手臂
             const handParticleCount = Math.floor(PARTICLES_PER_HAND * 0.7);
             const handEndIndex = startIndex + handParticleCount;
 
             let pIndex = startIndex;
             const particlesPerBone = Math.floor(handParticleCount / HAND_CONNECTIONS.length);
 
-            // 1. 生成手掌骨骼
             HAND_CONNECTIONS.forEach(pair => {
                 const start = landmarks[pair[0]];
                 const end = landmarks[pair[1]];
@@ -262,30 +276,21 @@
                     if (pIndex >= handEndIndex) break;
                     
                     const t = Math.random();
-                    // MediaPipe 坐标 (0~1) 映射到 3D 空间
                     let tx = (0.5 - (start.x + (end.x - start.x) * t)) * HAND_SCALE_BASE * 2.5;
                     let ty = (0.5 - (start.y + (end.y - start.y) * t)) * HAND_SCALE_BASE * 2.5;
                     let tz = -(start.z + (end.z - start.z) * t) * HAND_SCALE_BASE * 2.0;
 
                     const spread = 8 * (1.0 - t * 0.5);
-                    tx += (Math.random() - 0.5) * spread;
-                    ty += (Math.random() - 0.5) * spread;
-                    tz += (Math.random() - 0.5) * spread;
+                    tx += (Math.random() - 0.5) * spread; ty += (Math.random() - 0.5) * spread; tz += (Math.random() - 0.5) * spread;
 
-                    targetPositions[pIndex * 3] = tx;
-                    targetPositions[pIndex * 3 + 1] = ty;
-                    targetPositions[pIndex * 3 + 2] = tz;
+                    targetPositions[pIndex * 3] = tx; targetPositions[pIndex * 3 + 1] = ty; targetPositions[pIndex * 3 + 2] = tz;
                     pIndex++;
                 }
             });
 
-            // 2. 生成手臂拖尾
             const wrist = landmarks[0];
             const middleMCP = landmarks[9];
-            // 计算手臂方向
-            let dx = wrist.x - middleMCP.x;
-            let dy = wrist.y - middleMCP.y;
-            let dz = wrist.z - middleMCP.z;
+            let dx = wrist.x - middleMCP.x; let dy = wrist.y - middleMCP.y; let dz = wrist.z - middleMCP.z;
             const len = Math.sqrt(dx*dx + dy*dy + dz*dz);
             dx /= len; dy /= len; dz /= len;
 
@@ -297,77 +302,56 @@
                 const t = Math.random();
                 const dist = t * ARM_LENGTH;
 
-                let tx = wristX + (-dx) * dist;
-                let ty = wristY + (-dy) * dist;
-                let tz = wristZ + (-dz) * dist;
-
-                // 距离越远，散布越大 (平方增长)
+                let tx = wristX + (-dx) * dist; let ty = wristY + (-dy) * dist; let tz = wristZ + (-dz) * dist;
                 const armSpread = 15 + Math.pow(t, 2) * 100;
 
-                tx += (Math.random() - 0.5) * armSpread;
-                ty += (Math.random() - 0.5) * armSpread;
-                tz += (Math.random() - 0.5) * armSpread;
+                tx += (Math.random() - 0.5) * armSpread; ty += (Math.random() - 0.5) * armSpread; tz += (Math.random() - 0.5) * armSpread;
 
-                targetPositions[i * 3] = tx;
-                targetPositions[i * 3 + 1] = ty;
-                targetPositions[i * 3 + 2] = tz;
+                targetPositions[i * 3] = tx; targetPositions[i * 3 + 1] = ty; targetPositions[i * 3 + 2] = tz;
             }
         }
 
-        // ================= 动画主循环 =================
+        // ================= 动画循环 =================
         function animate() {
             requestAnimationFrame(animate);
             material.color.lerp(targetColor, 0.05);
 
-            // --- A. 动态手掌模式 ---
             if (currentShape === 'hand') {
                 for (let i = 0; i < MAX_HANDS; i++) {
                     if (i < multiHandLandmarks.length) {
                         const landmarks = multiHandLandmarks[i];
                         updateSingleHandParticles(landmarks, i);
-                        // 根据手腕 Z 深度计算缩放
                         let s = (landmarks[0].z + 0.2) * 3.0;
                         handScales[i] = THREE.MathUtils.clamp(s, 0.4, 2.5);
                     } else {
-                        // 如果手消失，缩放归零
                         handScales[i] = THREE.MathUtils.lerp(handScales[i], 0, 0.1); 
                     }
                 }
                 particles.rotation.set(0,0,0);
-            } 
-            // --- B. 静态形状模式 ---
-            else {
+            } else {
                 let hasHand = multiHandLandmarks.length > 0;
-                
                 if (isAutoRotation) {
                     particles.rotation.y += 0.002;
                     particles.rotation.x = THREE.MathUtils.lerp(particles.rotation.x, 0, 0.05);
                     particles.rotation.z = THREE.MathUtils.lerp(particles.rotation.z, 0, 0.05);
                 } else if (hasHand) {
-                    // 跟随主手旋转
                     particles.rotation.x = THREE.MathUtils.lerp(particles.rotation.x, mainHandRotation.x, 0.1);
                     particles.rotation.y = THREE.MathUtils.lerp(particles.rotation.y, mainHandRotation.y, 0.1);
                     particles.rotation.z = THREE.MathUtils.lerp(particles.rotation.z, mainHandRotation.z, 0.1);
                 }
             }
 
-            // --- C. 粒子位置更新 ---
             const positions = geometry.attributes.position.array;
-            
             for (let i = 0; i < TOTAL_PARTICLES; i++) {
-                // 计算当前粒子属于哪只手 (0, 1...)
                 const handIndex = Math.floor(i / PARTICLES_PER_HAND);
                 let effectiveScale = 1.0;
                 
                 if (currentShape === 'hand') {
                     effectiveScale = handScales[handIndex];
                 } else {
-                    // 静态模式：高灵敏度缩放
                     if (multiHandLandmarks.length > 0) {
-                        // 0.6 + factor * 2.2 -> 手张开时变得很大
                         effectiveScale = 0.6 + (handOpenFactor * 2.2);
                     } else {
-                        // 自动呼吸
                         const time = Date.now() * 0.001;
                         effectiveScale = 0.7 + Math.sin(time) * 0.2;
                     }
@@ -375,8 +359,6 @@
 
                 const px = positions[i*3], py = positions[i*3+1], pz = positions[i*3+2];
                 const tx = targetPositions[i*3], ty = targetPositions[i*3+1], tz = targetPositions[i*3+2];
-                
-                // 手掌模式移动快一点(0.2)，静态模式慢一点(0.06)
                 const speed = currentShape === 'hand' ? 0.2 : 0.06;
 
                 positions[i*3]   += (tx * effectiveScale - px) * speed;
@@ -399,15 +381,11 @@
 
         function onResults(results) {
             document.getElementById('loader').style.display = 'none';
-            
             multiHandLandmarks = results.multiHandLandmarks || [];
 
-            // 计算静态模式所需的通用参数 (使用第一只手)
             if (multiHandLandmarks.length > 0) {
                 const primaryHand = multiHandLandmarks[0];
                 const palm = primaryHand[0];
-                
-                // 计算张合程度
                 let totalDist = 0;
                 [4, 8, 12, 16, 20].forEach(idx => {
                     const tip = primaryHand[idx];
@@ -417,7 +395,6 @@
                 let rawFactor = (totalDist / 5 - 0.1) * 3.5;
                 handOpenFactor = Math.max(0, Math.min(1, rawFactor));
 
-                // 计算旋转角度
                 if (!isAutoRotation) {
                     const wrist = primaryHand[0];
                     const mid = primaryHand[9];
@@ -432,7 +409,6 @@
                 handOpenFactor = 0;
             }
 
-            // 更新 UI 文本
             if (multiHandLandmarks.length > 0) {
                 const count = multiHandLandmarks.length;
                 if (currentShape === 'hand') {
@@ -440,9 +416,9 @@
                     statusElement.style.color = "#30d158";
                 } else {
                     if(!isAutoRotation) {
-                        statusElement.innerText = `静态模式 | 高灵敏缩放 | 手势旋转`;
+                        statusElement.innerText = `静态模式 | 缩放 | 手势旋转`;
                     } else {
-                        statusElement.innerText = `静态模式 | 高灵敏缩放 | 自动旋转`;
+                        statusElement.innerText = `静态模式 | 缩放 | 自动旋转`;
                     }
                     statusElement.style.color = "#00d2ff";
                 }
@@ -461,23 +437,31 @@
         });
         hands.onResults(onResults);
         
-        // 手机摄像头启动逻辑 (无固定分辨率，自适应)
+        // ================= 摄像头自适应配置 =================
         const videoElement = document.getElementById('input_video');
-        const cameraUtils = new Camera(videoElement, {
-            onFrame: async () => { await hands.send({image: videoElement}); },
-            // 不设置 width/height 以允许自适应
-        });
+        
+        // 【关键】电脑端请求高分辨率横屏，手机端请求自适应
+        const cameraConfig = {
+            onFrame: async () => { await hands.send({image: videoElement}); }
+        };
+
+        if (!isMobile) {
+            // 电脑端：强制宽屏
+            cameraConfig.width = 1280;
+            cameraConfig.height = 720;
+        } 
+        // 手机端：不设置 width/height，使用默认竖屏流
+
+        const cameraUtils = new Camera(videoElement, cameraConfig);
         
         cameraUtils.start().catch(err => {
             console.error(err);
-            alert("摄像头启动失败: " + err.message + "\n请确保使用 HTTPS 协议访问，或更换浏览器。");
+            alert("摄像头启动失败: " + err.message);
         });
         
-        // UI 事件
         document.getElementById('rotationToggle').addEventListener('change', (e)=>{isAutoRotation=e.target.checked;});
         document.getElementById('colorPicker').addEventListener('input', (e)=>{targetColor.set(e.target.value);});
 
-        // 启动
         initThree();
     </script>
 </body>
